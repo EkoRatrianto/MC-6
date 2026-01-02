@@ -1,0 +1,1497 @@
+{
+  "name": "AnalisisDataPerusahaanTbk (Fixed)",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "analisa-emiten",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "50bba69e-176f-4156-a590-b7db681d89bc",
+      "name": "Webhook Trigger (UI Form)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        240,
+        32
+      ],
+      "webhookId": "a1346f64b80f45e3"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build a simple HTML form UI for on-demand analysis\nconst html = `<!doctype html>\n<html lang=\"id\">\n<head>\n  <meta charset=\"utf-8\" />\n  <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\" />\n  <title>Analisa Emiten (Tbk) - On Demand</title>\n  <style>\n    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,\"Helvetica Neue\",Arial; background:#f6f7fb; margin:0;}\n    .wrap{max-width:920px;margin:32px auto;padding:0 16px;}\n    .card{background:#fff;border:1px solid #e7e9f0;border-radius:14px; box-shadow:0 8px 24px rgba(0,0,0,.06); overflow:hidden;}\n    header{padding:18px 20px;border-bottom:1px solid #eef0f6;}\n    h1{font-size:18px;margin:0;}\n    p.sub{margin:6px 0 0;color:#5b6377;font-size:13px;}\n    form{padding:20px; display:grid; grid-template-columns:1fr 1fr; gap:14px;}\n    label{display:block;font-size:12px;color:#5b6377;margin:0 0 6px;}\n    input, textarea, select{width:100%; padding:10px 12px; border:1px solid #d7dbea; border-radius:10px; font-size:14px;}\n    textarea{min-height:90px; resize:vertical;}\n    .full{grid-column:1 / -1;}\n    .row{display:flex; gap:12px;}\n    .row > div{flex:1;}\n    .actions{grid-column:1 / -1; display:flex; gap:10px; align-items:center; justify-content:flex-end; padding-top:8px;}\n    button{border:0; background:#1f6feb; color:#fff; padding:10px 14px; border-radius:10px; font-size:14px; cursor:pointer;}\n    button.secondary{background:#eef2ff;color:#1f6feb;}\n    .hint{font-size:12px;color:#5b6377;}\n    .ok{display:none; margin:0; padding:12px 16px; border-top:1px solid #eef0f6; background:#fafbff; color:#334155; font-size:13px;}\n    code{background:#f1f5f9; padding:1px 5px; border-radius:6px;}\n  </style>\n</head>\n<body>\n  <div class=\"wrap\">\n    <div class=\"card\">\n      <header>\n        <h1>Analisa Emiten (Tbk) - On Demand</h1>\n        <p class=\"sub\">Masukkan ticker emiten dan opsi data. Sistem akan menghasilkan laporan analisis gaya Big-4 (SWOT, rasio, dan tren harga).</p>\n      </header>\n\n      <form id=\"f\">\n        <div>\n          <label for=\"stock_ticker\">Ticker (IDX)</label>\n          <input id=\"stock_ticker\" name=\"stock_ticker\" placeholder=\"BBCA atau IDX:BBCA\" required />\n          <div class=\"hint\">Default: <code>BBCA</code></div>\n        </div>\n\n        <div>\n          <label for=\"company_name\">Nama Perusahaan (opsional)</label>\n          <input id=\"company_name\" name=\"company_name\" placeholder=\"PT ... Tbk\" />\n        </div>\n\n        <div>\n          <label for=\"period_years\">Periode (tahun)</label>\n          <select id=\"period_years\" name=\"period_years\">\n            <option value=\"3\">3</option>\n            <option value=\"5\" selected>5</option>\n            <option value=\"10\">10</option>\n          </select>\n        </div>\n\n        <div>\n          <label for=\"news_query\">News Query (opsional)</label>\n          <input id=\"news_query\" name=\"news_query\" placeholder=\"BBCA OR Bank Central Asia\" />\n        </div>\n\n        <div class=\"full\">\n          <label for=\"annual_report_urls\">Annual Report URLs (opsional, pisahkan per baris)</label>\n          <textarea id=\"annual_report_urls\" name=\"annual_report_urls\" placeholder=\"https://.../annual-report-2024.pdf&#10;https://.../annual-report-2023.pdf\"></textarea>\n          <div class=\"hint\">Jika kosong, sistem akan mencoba auto-discovery (best-effort) dari sumber publik.</div>\n        </div>\n\n        <div>\n          <label for=\"google_sheet_id\">Google Sheet ID harga saham (opsional)</label>\n          <input id=\"google_sheet_id\" name=\"google_sheet_id\" placeholder=\"1AbC... (kosongkan jika tidak ada)\" />\n          <div class=\"hint\">Tab default: <code>Price5Y</code></div>\n        </div>\n\n        <div>\n          <label for=\"sheet_tab_name\">Sheet Tab Name (opsional)</label>\n          <input id=\"sheet_tab_name\" name=\"sheet_tab_name\" placeholder=\"Price5Y\" />\n        </div>\n\n        <div>\n          <label for=\"drive_folder_id\">Google Drive Folder ID (opsional)</label>\n          <input id=\"drive_folder_id\" name=\"drive_folder_id\" placeholder=\"1XyZ...\" />\n        </div>\n\n        <div>\n          <label for=\"recipients_email\">Email penerima (opsional)</label>\n          <input id=\"recipients_email\" name=\"recipients_email\" placeholder=\"a@b.com, c@d.com\" />\n        </div>\n\n        <div class=\"actions\">\n          <button type=\"button\" class=\"secondary\" id=\"reset\">Reset</button>\n          <button type=\"submit\">Jalankan Analisis</button>\n        </div>\n      </form>\n\n      <p class=\"ok\" id=\"ok\"></p>\n    </div>\n  </div>\n\n<script>\n  const form = document.getElementById('f');\n  const ok = document.getElementById('ok');\n  const reset = document.getElementById('reset');\n\n  reset.addEventListener('click', () => {\n    form.reset();\n    ok.style.display='none';\n  });\n\n  form.addEventListener('submit', async (e) => {\n    e.preventDefault();\n    ok.style.display='none';\n\n    const fd = new FormData(form);\n    const annualRaw = (fd.get('annual_report_urls') || '').toString();\n    const annualUrls = annualRaw.split(/\\r?\\n/).map(s => s.trim()).filter(Boolean);\n\n    const recipientsRaw = (fd.get('recipients_email') || '').toString();\n    const recipients = recipientsRaw.split(',').map(s => s.trim()).filter(Boolean);\n\n    const payload = {\n      stock_ticker: (fd.get('stock_ticker') || '').toString(),\n      company_name: (fd.get('company_name') || '').toString(),\n      period_years: parseInt((fd.get('period_years') || '5').toString(), 10),\n      news_query: (fd.get('news_query') || '').toString(),\n      annual_report_urls: annualUrls,\n      google_sheet_id: (fd.get('google_sheet_id') || '').toString(),\n      sheet_tab_name: (fd.get('sheet_tab_name') || '').toString(),\n      drive_folder_id: (fd.get('drive_folder_id') || '').toString(),\n      recipients_email: recipients\n    };\n\n    const basePath = window.location.pathname.replace(/\\/$/, '');\n    const runUrl = basePath + '/run';\n\n    try {\n      const res = await fetch(runUrl, {\n        method: 'POST',\n        headers: {'Content-Type':'application/json'},\n        body: JSON.stringify(payload)\n      });\n      const json = await res.json();\n      ok.textContent = 'Selesai. run_id=' + (json.run_id || '-') + (json.drive_links?.report_html ? (' | Drive: ' + json.drive_links.report_html) : '');\n      ok.style.display='block';\n    } catch(err) {\n      ok.textContent = 'Gagal menjalankan analisis: ' + err;\n      ok.style.display='block';\n    }\n  });\n</script>\n</body>\n</html>`;\n\nreturn [{ json: { html } }];\n"
+      },
+      "id": "e07d7fea-1e63-447e-9a4a-6b77ca95d652",
+      "name": "Build UI HTML",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      },
+      "id": "f828b6eb-7182-46f7-80bb-64522fbe6bb4",
+      "name": "Respond UI (HTML)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        688,
+        32
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "analisa-emiten/run",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "7ad498b4-da87-48e9-aa5d-722158ca2f14",
+      "name": "Webhook Trigger (Run)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        240,
+        272
+      ],
+      "webhookId": "8703b3fe-efac-4a21-a4a2-0ff8718b7054"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 6
+            }
+          ]
+        }
+      },
+      "id": "fd6a4b00-7802-4930-8faa-7282212ea262",
+      "name": "Schedule Trigger (Weekly)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        240,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize input from webhook (JSON) or schedule trigger\nconst src = $json?.headers ? 'webhook' : 'schedule';\n\n// Accept both JSON body and query params\nconst body = $json.body ?? $json;\n\n// Helper: normalize ticker\nfunction normalizeTicker(t) {\n  if (!t) return 'IDX:BBCA';\n  const s = String(t).trim().toUpperCase();\n  if (s.startsWith('IDX:')) return s;\n  // if user typed BBCA -> IDX:BBCA\n  return 'IDX:' + s.replace(/[^A-Z0-9]/g,'');\n}\n\n// Parse annual report urls from text/array\nfunction parseAnnual(v){\n  if (!v) return [];\n  if (Array.isArray(v)) return v.map(x => String(x).trim()).filter(Boolean);\n  const s = String(v);\n  return s.split(/\\r?\\n|,/).map(x => x.trim()).filter(Boolean).filter(u => /^https?:\\/\\//i.test(u));\n}\n\nfunction parseEmails(v){\n  if (!v) return [];\n  if (Array.isArray(v)) return v.map(x => String(x).trim()).filter(Boolean);\n  return String(v).split(',').map(x=>x.trim()).filter(Boolean);\n}\n\nconst stock_ticker = normalizeTicker(body.stock_ticker || body.ticker || body.emiten);\nconst company_name = (body.company_name || '').toString().trim();\nconst period_years = Number(body.period_years || 5) || 5;\n\nconst news_query = (body.news_query || '').toString().trim() || stock_ticker.replace('IDX:','') + ' OR ' + (company_name || stock_ticker.replace('IDX:',''));\nconst annual_report_urls = parseAnnual(body.annual_report_urls);\nconst annual_report_keyword = (body.annual_report_keyword || 'laporan tahunan').toString().trim();\n\nconst google_sheet_id = (body.google_sheet_id || '').toString().trim();\nconst sheet_tab_name = (body.sheet_tab_name || 'Price5Y').toString().trim() || 'Price5Y';\n\nconst drive_folder_id = (body.drive_folder_id || '').toString().trim();\nconst recipients_email = parseEmails(body.recipients_email);\n\nconst auto_find_annual_reports = body.auto_find_annual_reports === false ? false : true; // default true (best-effort)\nconst max_news_items = Number(body.max_news_items || 25) || 25;\n\nconst bond_identifiers = Array.isArray(body.bond_identifiers) ? body.bond_identifiers : [];\nconst bond_api_url = (body.bond_api_url || '').toString().trim(); // keep empty by default\n\nconst run_id = `${new Date().toISOString().replace(/[-:]/g,'').slice(0,15)}-${stock_ticker.replace('IDX:','')}`;\n\nreturn [{\n  json: {\n    __source: src,\n    run_id,\n    stock_ticker,\n    company_name,\n    period_years,\n    benchmark_ticker: (body.benchmark_ticker || 'IHSG').toString().trim() || 'IHSG',\n    news_query,\n    annual_report_urls,\n    annual_report_keyword,\n    auto_find_annual_reports,\n    google_sheet_id,\n    sheet_tab_name,\n    drive_folder_id,\n    recipients_email,\n    max_news_items,\n    bond_identifiers,\n    bond_api_url\n  }\n}];\n"
+      },
+      "id": "1edca7ea-94d0-40d6-a098-8310a1195aac",
+      "name": "Normalize Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        464,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "id-1",
+              "name": "run_id",
+              "value": "={{ $json.run_id }}",
+              "type": "string"
+            },
+            {
+              "id": "id-2",
+              "name": "__source",
+              "value": "={{ $json.__source }}",
+              "type": "string"
+            },
+            {
+              "id": "id-3",
+              "name": "company_name",
+              "value": "={{ $json.company_name }}",
+              "type": "string"
+            },
+            {
+              "id": "id-4",
+              "name": "stock_ticker",
+              "value": "={{ $json.stock_ticker }}",
+              "type": "string"
+            },
+            {
+              "id": "id-5",
+              "name": "period_years",
+              "value": "={{ $json.period_years }}",
+              "type": "number"
+            },
+            {
+              "id": "id-6",
+              "name": "benchmark_ticker",
+              "value": "={{ $json.benchmark_ticker }}",
+              "type": "string"
+            },
+            {
+              "id": "id-7",
+              "name": "news_query",
+              "value": "={{ $json.news_query }}",
+              "type": "string"
+            },
+            {
+              "id": "id-8",
+              "name": "max_news_items",
+              "value": "={{ $json.max_news_items }}",
+              "type": "number"
+            },
+            {
+              "id": "id-9",
+              "name": "annual_report_urls",
+              "value": "={{ $json.annual_report_urls }}",
+              "type": "array"
+            },
+            {
+              "id": "id-10",
+              "name": "annual_report_keyword",
+              "value": "={{ $json.annual_report_keyword }}",
+              "type": "string"
+            },
+            {
+              "id": "id-11",
+              "name": "auto_find_annual_reports",
+              "value": "={{ $json.auto_find_annual_reports }}",
+              "type": "boolean"
+            },
+            {
+              "id": "id-12",
+              "name": "google_sheet_id",
+              "value": "={{ $json.google_sheet_id }}",
+              "type": "string"
+            },
+            {
+              "id": "id-13",
+              "name": "sheet_tab_name",
+              "value": "={{ $json.sheet_tab_name }}",
+              "type": "string"
+            },
+            {
+              "id": "id-14",
+              "name": "drive_folder_id",
+              "value": "={{ $json.drive_folder_id }}",
+              "type": "string"
+            },
+            {
+              "id": "id-15",
+              "name": "recipients_email",
+              "value": "={{ $json.recipients_email }}",
+              "type": "array"
+            },
+            {
+              "id": "id-16",
+              "name": "bond_identifiers",
+              "value": "={{ $json.bond_identifiers }}",
+              "type": "array"
+            },
+            {
+              "id": "id-17",
+              "name": "bond_api_url",
+              "value": "={{ $json.bond_api_url }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "fcffd99b-c3fc-4abb-a8ee-d110baef1591",
+      "name": "Workflow Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1360,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.idx.co.id/umbraco/Surface/ListedCompany/GetCompanyProfiles",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "start",
+              "value": "0"
+            },
+            {
+              "name": "length",
+              "value": "10"
+            },
+            {
+              "name": "search[value]",
+              "value": "={{ $('Workflow Configuration').item.json.stock_ticker.replace('IDX:','') }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "d9dca966-4fb6-456f-8cd3-c2e9bf3a811c",
+      "name": "IDX - Company Profiles Lookup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1584,
+        368
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse IDX company profile response (best-effort)\nconst config = $('Workflow Configuration').first().json;\nconst resp = $json || {};\n// IDX endpoint often returns { data: [...] } or a list-like structure\nconst rows = resp.data || resp.Data || resp.rows || resp.items || resp || [];\nconst arr = Array.isArray(rows) ? rows : (rows?.data ? rows.data : []);\nconst ticker = config.stock_ticker.replace('IDX:','');\n\nfunction pickBest(list){\n  if (!Array.isArray(list) || list.length===0) return null;\n  const byTicker = list.find(x => (x.StockCode || x.Code || x.kodeEmiten || x.stock_code || x.stockCode || '').toString().toUpperCase() === ticker);\n  return byTicker || list[0];\n}\n\nconst best = pickBest(arr);\n\nconst company_profile = best ? {\n  stock_code: (best.StockCode || best.Code || best.kodeEmiten || best.stock_code || best.stockCode || '').toString(),\n  company_name: (best.CompanyName || best.NamaPerusahaan || best.company_name || best.companyName || '').toString(),\n  sector: (best.Sector || best.Sektor || best.sector || '').toString(),\n  sub_sector: (best.SubSector || best.SubSektor || best.subSector || best.sub_sector || '').toString(),\n  listing_date: (best.ListingDate || best.tanggalPencatatan || best.listing_date || '').toString(),\n  address: (best.Address || best.Alamat || best.address || '').toString(),\n  website: (best.Website || best.website || '').toString(),\n} : {};\n\nreturn [{\n  json: {\n    company_profile,\n    company_name_effective: config.company_name || company_profile.company_name || '',\n    stock_ticker: config.stock_ticker,\n    run_id: config.run_id\n  }\n}];\n"
+      },
+      "id": "58ce0904-d8d9-4a59-a4c0-bbff4b758f60",
+      "name": "Parse Company Profile",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1808,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "id-1",
+              "leftValue": "={{ $json.auto_find_annual_reports }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "isTrue"
+              }
+            },
+            {
+              "id": "id-2",
+              "leftValue": "={{ $json.annual_report_urls }}",
+              "operator": {
+                "type": "array",
+                "operation": "isEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "53fe1310-7b1e-4152-8ac3-649d0b0e7917",
+      "name": "Auto-Find Annual Reports?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        688,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.idx.co.id/primary/ListedCompany/GetAnnouncement",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "kodeEmiten",
+              "value": "={{ $json.stock_ticker.replace(\"IDX:\",\"\") }}"
+            },
+            {
+              "name": "keyword",
+              "value": "={{ $json.annual_report_keyword }}"
+            },
+            {
+              "name": "start",
+              "value": "0"
+            },
+            {
+              "name": "length",
+              "value": "10"
+            },
+            {
+              "name": "dateFrom",
+              "value": "={{ $now.minus({years: 5}).format(\"yyyy-MM-dd\") }}"
+            },
+            {
+              "name": "dateTo",
+              "value": "={{ $now.format(\"yyyy-MM-dd\") }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "27e2f566-a380-4fcf-804e-46ad3b9e6d53",
+      "name": "IDX - Announcement Lookup (Annual Reports)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        944,
+        240
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse annual report PDF links from IDX announcement response (best-effort)\nconst input = $input.first().json;\nconst resp = $json || {};\n\nfunction collectUrls(obj){\n  const urls = new Set();\n  const stack = [obj];\n  while (stack.length){\n    const cur = stack.pop();\n    if (!cur) continue;\n    if (typeof cur === 'string'){\n      if (/^https?:\\/\\/\\S+\\.pdf(\\?\\S*)?$/i.test(cur)) urls.add(cur);\n      continue;\n    }\n    if (Array.isArray(cur)){\n      for (const v of cur) stack.push(v);\n      continue;\n    }\n    if (typeof cur === 'object'){\n      for (const k of Object.keys(cur)){\n        const v = cur[k];\n        // common keys for links\n        if (typeof v === 'string' && /pdf/i.test(v)) stack.push(v);\n        else stack.push(v);\n      }\n    }\n  }\n  return Array.from(urls);\n}\n\nconst found = collectUrls(resp);\nconst annual_report_urls = found.slice(0, 5);\n\nreturn [{\n  json: {\n    ...input,\n    annual_report_urls: annual_report_urls.length ? annual_report_urls : input.annual_report_urls\n  }\n}];\n"
+      },
+      "id": "b30c6950-a437-42ae-844e-db6c34c852f0",
+      "name": "Parse Annual Report Links",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1136,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "id-1",
+              "leftValue": "={{ $('Workflow Configuration').item.json.google_sheet_id }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "808dcb0e-bb6f-44b5-a5f0-c45dc8584248",
+      "name": "Check Stock Sheet Provided",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2032,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Workflow Configuration').item.json.google_sheet_id }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $('Workflow Configuration').item.json.sheet_tab_name || 'Price5Y' }}"
+        },
+        "options": {}
+      },
+      "id": "3addb406-ea0e-4d3b-b1aa-bc70fef4c5e6",
+      "name": "Read Stock Price Data (5Y)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2256,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse and clean stock data from Google Sheets\nconst items = $input.all();\nconst cleanedData = [];\n\n// Helper function to detect and remove outliers using IQR method\nfunction removeOutliers(data, field) {\n  const values = data.map(item => item[field]).filter(v => v !== null && !isNaN(v)).sort((a, b) => a - b);\n  \n  if (values.length < 4) return data; // Not enough data for outlier detection\n  \n  const q1Index = Math.floor(values.length * 0.25);\n  const q3Index = Math.floor(values.length * 0.75);\n  const q1 = values[q1Index];\n  const q3 = values[q3Index];\n  const iqr = q3 - q1;\n  const lowerBound = q1 - (1.5 * iqr);\n  const upperBound = q3 + (1.5 * iqr);\n  \n  return data.filter(item => {\n    const value = item[field];\n    return value >= lowerBound && value <= upperBound;\n  });\n}\n\n// Parse each item\nfor (const item of items) {\n  const json = item.json;\n  \n  // Skip header row or empty rows\n  if (!json.date || json.date === 'Date' || json.date === 'date') continue;\n  \n  try {\n    // Parse date - handle various formats\n    let dateObj;\n    if (json.date instanceof Date) {\n      dateObj = json.date;\n    } else if (typeof json.date === 'string') {\n      dateObj = new Date(json.date);\n    } else if (typeof json.date === 'number') {\n      // Excel serial date number\n      dateObj = new Date((json.date - 25569) * 86400 * 1000);\n    }\n    \n    // Validate date\n    if (!dateObj || isNaN(dateObj.getTime())) continue;\n    \n    // Parse numeric values\n    const close = parseFloat(json.close || json.Close || json.price || json.Price);\n    const volume = parseFloat(json.volume || json.Volume || 0);\n    \n    // Skip if close price is invalid\n    if (isNaN(close) || close <= 0) continue;\n    \n    cleanedData.push({\n      date: dateObj,\n      close: close,\n      volume: isNaN(volume) ? 0 : volume\n    });\n  } catch (error) {\n    console.log(`Error parsing row: ${error.message}`, json);\n    continue;\n  }\n}\n\n// Sort by date ascending\ncleanedData.sort((a, b) => a.date - b.date);\n\n// Remove outliers based on close price\nconst dataWithoutOutliers = removeOutliers(cleanedData, 'close');\n\n// Calculate basic statistics\nconst closePrices = dataWithoutOutliers.map(d => d.close);\nconst volumes = dataWithoutOutliers.map(d => d.volume);\n\nconst stats = {\n  count: dataWithoutOutliers.length,\n  priceStats: {\n    min: Math.min(...closePrices),\n    max: Math.max(...closePrices),\n    mean: closePrices.reduce((a, b) => a + b, 0) / closePrices.length,\n    median: closePrices.sort((a, b) => a - b)[Math.floor(closePrices.length / 2)]\n  },\n  volumeStats: {\n    min: Math.min(...volumes),\n    max: Math.max(...volumes),\n    mean: volumes.reduce((a, b) => a + b, 0) / volumes.length,\n    total: volumes.reduce((a, b) => a + b, 0)\n  },\n  dateRange: {\n    start: dataWithoutOutliers[0].date,\n    end: dataWithoutOutliers[dataWithoutOutliers.length - 1].date\n  },\n  outliersRemoved: cleanedData.length - dataWithoutOutliers.length\n};\n\nconsole.log('Stock data cleaning complete:', stats);\n\n// Return cleaned data array with statistics\nreturn [\n  {\n    json: {\n      cleanedStockData: dataWithoutOutliers,\n      statistics: stats,\n      ticker: $('Workflow Configuration').item.json.stock_ticker\n    }\n  }\n];"
+      },
+      "id": "79058b28-8ab8-475e-9547-d8a15a157db1",
+      "name": "Parse & Clean Stock Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2480,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate 5-Year Stock Analytics\n// Input: Cleaned stock price data from previous node\n// Output: Comprehensive analytics object with CAGR, volatility, drawdown, etc.\n\nconst items = $input.all();\nconst stockData = items[0].json.stockData || [];\nconst benchmarkData = items[0].json.benchmarkData || [];\nconst config = $('Workflow Configuration').item.json;\n\n// Helper function to calculate returns\nfunction calculateReturns(prices) {\n  const returns = [];\n  for (let i = 1; i < prices.length; i++) {\n    if (prices[i-1] !== 0) {\n      returns.push((prices[i] - prices[i-1]) / prices[i-1]);\n    }\n  }\n  return returns;\n}\n\n// Helper function to calculate CAGR\nfunction calculateCAGR(startPrice, endPrice, years) {\n  if (startPrice <= 0 || endPrice <= 0 || years <= 0) return 0;\n  return Math.pow(endPrice / startPrice, 1 / years) - 1;\n}\n\n// Helper function to calculate volatility (annualized)\nfunction calculateVolatility(returns) {\n  if (returns.length === 0) return 0;\n  const mean = returns.reduce((sum, r) => sum + r, 0) / returns.length;\n  const variance = returns.reduce((sum, r) => sum + Math.pow(r - mean, 2), 0) / returns.length;\n  const dailyVol = Math.sqrt(variance);\n  return dailyVol * Math.sqrt(252); // Annualized (252 trading days)\n}\n\n// Helper function to calculate max drawdown\nfunction calculateMaxDrawdown(prices) {\n  let maxDrawdown = 0;\n  let peak = prices[0];\n  let peakDate = null;\n  let troughDate = null;\n  \n  for (let i = 0; i < prices.length; i++) {\n    if (prices[i] > peak) {\n      peak = prices[i];\n      peakDate = stockData[i].date;\n    }\n    const drawdown = (peak - prices[i]) / peak;\n    if (drawdown > maxDrawdown) {\n      maxDrawdown = drawdown;\n      troughDate = stockData[i].date;\n    }\n  }\n  \n  return { maxDrawdown, peakDate, troughDate };\n}\n\n// Helper function to calculate rolling returns\nfunction calculateRollingReturns(prices, period) {\n  const rollingReturns = [];\n  for (let i = period; i < prices.length; i++) {\n    const startPrice = prices[i - period];\n    const endPrice = prices[i];\n    if (startPrice !== 0) {\n      rollingReturns.push((endPrice - startPrice) / startPrice);\n    }\n  }\n  return rollingReturns;\n}\n\n// Helper function to calculate moving average\nfunction calculateMA(prices, period) {\n  const ma = [];\n  for (let i = period - 1; i < prices.length; i++) {\n    const sum = prices.slice(i - period + 1, i + 1).reduce((a, b) => a + b, 0);\n    ma.push(sum / period);\n  }\n  return ma;\n}\n\n// Helper function to calculate correlation\nfunction calculateCorrelation(returns1, returns2) {\n  const n = Math.min(returns1.length, returns2.length);\n  if (n === 0) return 0;\n  \n  const mean1 = returns1.slice(0, n).reduce((sum, r) => sum + r, 0) / n;\n  const mean2 = returns2.slice(0, n).reduce((sum, r) => sum + r, 0) / n;\n  \n  let numerator = 0;\n  let sum1Sq = 0;\n  let sum2Sq = 0;\n  \n  for (let i = 0; i < n; i++) {\n    const diff1 = returns1[i] - mean1;\n    const diff2 = returns2[i] - mean2;\n    numerator += diff1 * diff2;\n    sum1Sq += diff1 * diff1;\n    sum2Sq += diff2 * diff2;\n  }\n  \n  const denominator = Math.sqrt(sum1Sq * sum2Sq);\n  return denominator === 0 ? 0 : numerator / denominator;\n}\n\n// Helper function to identify trend phases\nfunction identifyTrendPhases(prices, ma50, ma200) {\n  const phases = [];\n  let currentPhase = null;\n  \n  for (let i = 0; i < prices.length; i++) {\n    let phase = 'sideways';\n    \n    if (i >= 199) { // Need at least 200 data points for MA200\n      const price = prices[i];\n      const ma50Val = ma50[i - 49] || price;\n      const ma200Val = ma200[i - 199] || price;\n      \n      if (price > ma50Val && ma50Val > ma200Val) {\n        phase = 'uptrend';\n      } else if (price < ma50Val && ma50Val < ma200Val) {\n        phase = 'downtrend';\n      }\n    }\n    \n    if (phase !== currentPhase) {\n      phases.push({\n        phase: phase,\n        startDate: stockData[i].date,\n        startPrice: prices[i]\n      });\n      currentPhase = phase;\n    }\n  }\n  \n  return phases;\n}\n\n// Extract prices\nconst prices = stockData.map(d => d.close);\nconst benchmarkPrices = benchmarkData.map(d => d.close);\n\n// Calculate basic metrics\nconst startPrice = prices[0];\nconst endPrice = prices[prices.length - 1];\nconst years = config.period_years || 5;\n\nconst cagr = calculateCAGR(startPrice, endPrice, years);\nconst totalReturn = (endPrice - startPrice) / startPrice;\n\n// Calculate returns\nconst returns = calculateReturns(prices);\nconst benchmarkReturns = calculateReturns(benchmarkPrices);\n\n// Calculate volatility\nconst volatility = calculateVolatility(returns);\n\n// Calculate max drawdown\nconst { maxDrawdown, peakDate, troughDate } = calculateMaxDrawdown(prices);\n\n// Calculate rolling returns (assuming ~252 trading days per year)\nconst rolling1Y = calculateRollingReturns(prices, 252);\nconst rolling3Y = calculateRollingReturns(prices, 252 * 3);\n\n// Calculate moving averages\nconst ma50 = calculateMA(prices, 50);\nconst ma200 = calculateMA(prices, 200);\n\n// Current price vs moving averages\nconst currentPrice = endPrice;\nconst currentMA50 = ma50[ma50.length - 1];\nconst currentMA200 = ma200[ma200.length - 1];\n\n// Calculate correlation with benchmark\nconst correlation = calculateCorrelation(returns, benchmarkReturns);\n\n// Identify trend phases\nconst trendPhases = identifyTrendPhases(prices, ma50, ma200);\n\n// Calculate Sharpe Ratio (assuming risk-free rate of 6% for Indonesia)\nconst riskFreeRate = 0.06;\nconst excessReturn = cagr - riskFreeRate;\nconst sharpeRatio = volatility !== 0 ? excessReturn / volatility : 0;\n\n// Calculate beta (vs benchmark)\nconst benchmarkVolatility = calculateVolatility(benchmarkReturns);\nconst beta = benchmarkVolatility !== 0 ? (correlation * volatility) / benchmarkVolatility : 1;\n\n// Compile comprehensive analytics\nconst analytics = {\n  ticker: config.stock_ticker,\n  companyName: config.company_name,\n  analysisDate: $now.toISO(),\n  periodYears: years,\n  \n  priceMetrics: {\n    startPrice: startPrice,\n    endPrice: endPrice,\n    currentPrice: currentPrice,\n    startDate: stockData[0].date,\n    endDate: stockData[stockData.length - 1].date\n  },\n  \n  returnMetrics: {\n    cagr: cagr,\n    cagrPercent: (cagr * 100).toFixed(2) + '%',\n    totalReturn: totalReturn,\n    totalReturnPercent: (totalReturn * 100).toFixed(2) + '%',\n    rolling1YAvg: rolling1Y.length > 0 ? rolling1Y.reduce((a, b) => a + b, 0) / rolling1Y.length : 0,\n    rolling3YAvg: rolling3Y.length > 0 ? rolling3Y.reduce((a, b) => a + b, 0) / rolling3Y.length : 0\n  },\n  \n  riskMetrics: {\n    annualizedVolatility: volatility,\n    volatilityPercent: (volatility * 100).toFixed(2) + '%',\n    maxDrawdown: maxDrawdown,\n    maxDrawdownPercent: (maxDrawdown * 100).toFixed(2) + '%',\n    maxDrawdownPeakDate: peakDate,\n    maxDrawdownTroughDate: troughDate,\n    sharpeRatio: sharpeRatio,\n    beta: beta\n  },\n  \n  technicalIndicators: {\n    ma50: currentMA50,\n    ma200: currentMA200,\n    priceVsMA50: ((currentPrice - currentMA50) / currentMA50 * 100).toFixed(2) + '%',\n    priceVsMA200: ((currentPrice - currentMA200) / currentMA200 * 100).toFixed(2) + '%',\n    goldenCross: currentMA50 > currentMA200,\n    currentTrend: trendPhases[trendPhases.length - 1]?.phase || 'unknown'\n  },\n  \n  benchmarkComparison: {\n    benchmark: config.benchmark_ticker,\n    correlation: correlation,\n    correlationPercent: (correlation * 100).toFixed(2) + '%',\n    beta: beta,\n    benchmarkCAGR: calculateCAGR(benchmarkPrices[0], benchmarkPrices[benchmarkPrices.length - 1], years),\n    outperformance: cagr - calculateCAGR(benchmarkPrices[0], benchmarkPrices[benchmarkPrices.length - 1], years)\n  },\n  \n  trendPhases: trendPhases,\n  \n  rawData: {\n    prices: prices,\n    returns: returns,\n    ma50: ma50,\n    ma200: ma200,\n    rolling1Y: rolling1Y,\n    rolling3Y: rolling3Y\n  }\n};\n\nreturn [{ json: { analytics: analytics, stockData: stockData, benchmarkData: benchmarkData } }];"
+      },
+      "id": "8e1598f2-2293-4302-8e8f-e2ba1973c555",
+      "name": "Calculate Stock Analytics (5Y)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2704,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Provide empty stock analytics if no stock price dataset is provided\nconst config = $('Workflow Configuration').first().json;\nreturn [{\n  json: {\n    stock_analytics: null,\n    stock_datapoints: 0,\n    note: 'Stock price analytics skipped (google_sheet_id not provided).',\n    stock_ticker: config.stock_ticker,\n    run_id: config.run_id\n  }\n}];\n"
+      },
+      "id": "68bbfc10-a4aa-41bd-b4a7-6e57dbec249f",
+      "name": "Set Empty Stock Analytics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2704,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ 'https://news.google.com/rss/search?q=' + encodeURIComponent($('Workflow Configuration').item.json.news_query) + '&hl=id&gl=ID&ceid=ID:id' }}",
+        "options": {}
+      },
+      "id": "3c61986a-c4d4-47a8-9c70-af669036af21",
+      "name": "Fetch News from RSS",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        2928,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Deduplicate news by URL, clean HTML entities, extract fields, and sort by date\nconst items = $input.all();\nconst seenUrls = new Set();\nconst cleanedNews = [];\n\nfor (const item of items) {\n  const url = item.json.link || item.json.url || '';\n  \n  // Skip if URL already seen or empty\n  if (!url || seenUrls.has(url)) {\n    continue;\n  }\n  \n  seenUrls.add(url);\n  \n  // Extract and clean fields\n  const title = (item.json.title || '')\n    .replace(/&amp;/g, '&')\n    .replace(/&lt;/g, '<')\n    .replace(/&gt;/g, '>')\n    .replace(/&quot;/g, '\"')\n    .replace(/&#39;/g, \"'\")\n    .replace(/&nbsp;/g, ' ')\n    .trim();\n  \n  const snippet = (item.json.contentSnippet || item.json.description || '')\n    .replace(/&amp;/g, '&')\n    .replace(/&lt;/g, '<')\n    .replace(/&gt;/g, '>')\n    .replace(/&quot;/g, '\"')\n    .replace(/&#39;/g, \"'\")\n    .replace(/&nbsp;/g, ' ')\n    .replace(/<[^>]*>/g, '') // Remove HTML tags\n    .trim();\n  \n  const source = item.json.creator || item.json.source || 'Unknown';\n  const dateStr = item.json.pubDate || item.json.isoDate || new Date().toISOString();\n  const date = new Date(dateStr);\n  \n  cleanedNews.push({\n    title: title,\n    url: url,\n    source: source,\n    date: date.toISOString(),\n    dateTimestamp: date.getTime(),\n    snippet: snippet\n  });\n}\n\n// Sort by date descending (newest first)\ncleanedNews.sort((a, b) => b.dateTimestamp - a.dateTimestamp);\n\n// Remove timestamp field used for sorting\ncleanedNews.forEach(news => delete news.dateTimestamp);\n\nreturn cleanedNews.map(news => ({ json: news }));"
+      },
+      "id": "f8b4fe4d-75b9-4cb9-bd3e-c706d90ee4d0",
+      "name": "Deduplicate & Clean News",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3152,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Classify News to SWOT Categories\n// Analyzes news items and assigns SWOT categories, themes, sentiment, and materiality scores\n\nconst newsItems = $input.all();\nconst classifiedNews = [];\n\n// Keywords for SWOT classification\nconst swotKeywords = {\n  strength: ['pertumbuhan', 'meningkat', 'ekspansi', 'inovasi', 'penghargaan', 'prestasi', 'keunggulan', 'unggul', 'sukses', 'profit', 'laba', 'dividen', 'akuisisi', 'kemitraan', 'kolaborasi'],\n  weakness: ['penurunan', 'turun', 'merosot', 'kerugian', 'rugi', 'masalah', 'kendala', 'hambatan', 'defisit', 'utang', 'gagal', 'ditunda', 'dibatalkan'],\n  opportunity: ['peluang', 'potensi', 'prospek', 'rencana', 'target', 'proyeksi', 'akan', 'investasi', 'pasar baru', 'ekspor', 'digitalisasi', 'transformasi'],\n  threat: ['risiko', 'ancaman', 'tantangan', 'persaingan', 'kompetitor', 'regulasi', 'sanksi', 'denda', 'investigasi', 'gugatan', 'krisis', 'inflasi', 'resesi']\n};\n\n// Keywords for theme classification\nconst themeKeywords = {\n  regulasi: ['regulasi', 'peraturan', 'kebijakan', 'ojk', 'pemerintah', 'undang-undang', 'aturan', 'izin', 'compliance'],\n  kompetisi: ['kompetitor', 'pesaing', 'persaingan', 'market share', 'pangsa pasar', 'rival'],\n  teknologi: ['teknologi', 'digital', 'inovasi', 'aplikasi', 'platform', 'sistem', 'otomasi', 'AI', 'blockchain'],\n  operasional: ['operasional', 'produksi', 'kapasitas', 'efisiensi', 'supply chain', 'distribusi', 'logistik'],\n  keuangan: ['keuangan', 'laba', 'rugi', 'revenue', 'pendapatan', 'profit', 'dividen', 'utang', 'modal', 'investasi'],\n  manajemen: ['manajemen', 'direksi', 'komisaris', 'CEO', 'CFO', 'kepemimpinan', 'strategi', 'restrukturisasi'],\n  reputasi: ['reputasi', 'citra', 'brand', 'merek', 'penghargaan', 'skandal', 'kontroversi'],\n  ESG: ['ESG', 'lingkungan', 'sosial', 'governance', 'sustainability', 'berkelanjutan', 'emisi', 'CSR'],\n  makro: ['ekonomi', 'inflasi', 'suku bunga', 'nilai tukar', 'GDP', 'resesi', 'pertumbuhan ekonomi', 'makro']\n};\n\n// Function to calculate keyword matches\nfunction countKeywordMatches(text, keywords) {\n  const lowerText = text.toLowerCase();\n  return keywords.filter(keyword => lowerText.includes(keyword.toLowerCase())).length;\n}\n\n// Function to determine SWOT category\nfunction classifySWOT(title, description) {\n  const text = `${title} ${description}`.toLowerCase();\n  const scores = {\n    strength: countKeywordMatches(text, swotKeywords.strength),\n    weakness: countKeywordMatches(text, swotKeywords.weakness),\n    opportunity: countKeywordMatches(text, swotKeywords.opportunity),\n    threat: countKeywordMatches(text, swotKeywords.threat)\n  };\n  \n  const maxScore = Math.max(...Object.values(scores));\n  if (maxScore === 0) return 'opportunity'; // Default to opportunity if no keywords match\n  \n  return Object.keys(scores).find(key => scores[key] === maxScore);\n}\n\n// Function to determine theme\nfunction classifyTheme(title, description) {\n  const text = `${title} ${description}`.toLowerCase();\n  const scores = {};\n  \n  for (const [theme, keywords] of Object.entries(themeKeywords)) {\n    scores[theme] = countKeywordMatches(text, keywords);\n  }\n  \n  const maxScore = Math.max(...Object.values(scores));\n  if (maxScore === 0) return 'operasional'; // Default theme\n  \n  return Object.keys(scores).find(key => scores[key] === maxScore);\n}\n\n// Function to calculate sentiment score (-1 to 1)\nfunction calculateSentiment(title, description, swotCategory) {\n  const text = `${title} ${description}`.toLowerCase();\n  \n  const positiveWords = ['baik', 'positif', 'meningkat', 'tumbuh', 'sukses', 'untung', 'laba', 'naik', 'optimis', 'kuat'];\n  const negativeWords = ['buruk', 'negatif', 'turun', 'merosot', 'rugi', 'gagal', 'lemah', 'pesimis', 'krisis', 'masalah'];\n  \n  const positiveCount = countKeywordMatches(text, positiveWords);\n  const negativeCount = countKeywordMatches(text, negativeWords);\n  \n  let sentiment = (positiveCount - negativeCount) / Math.max(positiveCount + negativeCount, 1);\n  \n  // Adjust based on SWOT category\n  if (swotCategory === 'strength') sentiment = Math.max(sentiment, 0.3);\n  if (swotCategory === 'weakness' || swotCategory === 'threat') sentiment = Math.min(sentiment, -0.2);\n  if (swotCategory === 'opportunity') sentiment = Math.max(sentiment, 0.1);\n  \n  return Math.max(-1, Math.min(1, sentiment));\n}\n\n// Function to calculate materiality score (0-10)\nfunction calculateMateriality(title, description, theme) {\n  const text = `${title} ${description}`.toLowerCase();\n  \n  const highImpactWords = ['signifikan', 'besar', 'utama', 'penting', 'krusial', 'strategis', 'fundamental', 'drastis'];\n  const financialWords = ['miliar', 'triliun', 'juta', 'persen', '%', 'revenue', 'laba', 'rugi'];\n  \n  let score = 5; // Base score\n  \n  // Increase score for high impact words\n  score += countKeywordMatches(text, highImpactWords) * 1.5;\n  \n  // Increase score for financial mentions\n  score += countKeywordMatches(text, financialWords) * 1;\n  \n  // Adjust based on theme importance\n  const themeWeights = {\n    keuangan: 1.5,\n    regulasi: 1.3,\n    manajemen: 1.2,\n    operasional: 1.0,\n    kompetisi: 1.1,\n    teknologi: 0.9,\n    reputasi: 1.0,\n    ESG: 0.8,\n    makro: 1.2\n  };\n  \n  score *= (themeWeights[theme] || 1.0);\n  \n  return Math.max(0, Math.min(10, Math.round(score * 10) / 10));\n}\n\n// Process each news item\nfor (const item of newsItems) {\n  const title = item.json.title || '';\n  const description = item.json.description || item.json.content || '';\n  const link = item.json.link || '';\n  const pubDate = item.json.pubDate || item.json.date || '';\n  \n  const swotCategory = classifySWOT(title, description);\n  const theme = classifyTheme(title, description);\n  const sentiment = calculateSentiment(title, description, swotCategory);\n  const materiality = calculateMateriality(title, description, theme);\n  \n  classifiedNews.push({\n    title,\n    description,\n    link,\n    pubDate,\n    swotCategory,\n    theme,\n    sentimentScore: sentiment,\n    materialityScore: materiality\n  });\n}\n\n// Sort by materiality score (highest first)\nclassifiedNews.sort((a, b) => b.materialityScore - a.materialityScore);\n\n// Return as single item with array\nreturn [{ json: { classifiedNews, totalNews: classifiedNews.length } }];"
+      },
+      "id": "a888c215-04ee-4ded-812c-035e8f0f520c",
+      "name": "Classify News to SWOT",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3376,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "id-1",
+              "leftValue": "={{ $('Workflow Configuration').item.json.annual_report_urls }}",
+              "operator": {
+                "type": "array",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "63abe5a0-04b4-4b6c-8ff7-4164078bc9be",
+      "name": "Check Annual Report URLs",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3600,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Split annual_report_urls into items (max 5)\nconst config = $('Workflow Configuration').first().json;\nconst urls = (config.annual_report_urls || []).filter(Boolean).slice(0,5);\nconst out = urls.map((url, idx) => ({\n  json: { url, idx, stock_ticker: config.stock_ticker, run_id: config.run_id }\n}));\nreturn out.length ? out : [{ json: { url: '', idx: 0, stock_ticker: config.stock_ticker, run_id: config.run_id } }];\n"
+      },
+      "id": "a5f105c9-218e-48f1-86cc-28b743113c58",
+      "name": "Prepare Annual Report Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3824,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          },
+          "timeout": 120000
+        }
+      },
+      "id": "f3ef9f6e-e0e3-4580-b1e3-6b64383f9679",
+      "name": "Download Annual Report PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        4048,
+        272
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "id": "bc607a78-426a-4e54-ae1f-2fb87d967e58",
+      "name": "Extract Text from Annual Reports",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        4272,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract Financial Ratios from Annual Reports (5 Years)\n// Input: Extracted text from annual reports\n// Output: Structured 5-year financial data with ratios and notes\n\nconst items = $input.all();\nconst config = $('Workflow Configuration').first().json;\nconst financialData = [];\n\n// Helper function to extract numbers from text\nfunction extractNumber(text, pattern) {\n  const match = text.match(pattern);\n  if (match) {\n    // Remove commas, dots (except decimal), and convert to number\n    const numStr = match[1].replace(/[,\\s]/g, '').replace(/\\./g, '');\n    return parseFloat(numStr) || 0;\n  }\n  return 0;\n}\n\n// Helper function to find value in table-like structures\nfunction findFinancialValue(text, keywords, year) {\n  const lines = text.split('\\n');\n  for (let i = 0; i < lines.length; i++) {\n    const line = lines[i].toLowerCase();\n    if (keywords.some(kw => line.includes(kw.toLowerCase()))) {\n      // Look for numbers in current line or next few lines\n      for (let j = i; j < Math.min(i + 5, lines.length); j++) {\n        const numMatch = lines[j].match(/([\\d,\\.]+)/);\n        if (numMatch) {\n          const num = parseFloat(numMatch[1].replace(/[,]/g, ''));\n          if (num > 0) return num;\n        }\n      }\n    }\n  }\n  return 0;\n}\n\n// Process each annual report\nfor (let i = 0; i < items.length && i < 5; i++) {\n  const item = items[i];\n  const text = item.json.text || item.json.data || '';\n  const year = new Date().getFullYear() - (4 - i); // Last 5 years\n  \n  // Extract Income Statement items (in millions)\n  const revenue = findFinancialValue(text, ['pendapatan', 'revenue', 'penjualan', 'sales'], year) || \n                  extractNumber(text, /(?:pendapatan|revenue|penjualan)[\\s\\S]{0,200}?([\\d,\\.]+)/);\n  \n  const cogs = findFinancialValue(text, ['beban pokok', 'cost of goods', 'harga pokok'], year) ||\n               extractNumber(text, /(?:beban pokok|cost of goods)[\\s\\S]{0,200}?([\\d,\\.]+)/);\n  \n  const grossProfit = revenue - cogs;\n  \n  const operatingExpenses = findFinancialValue(text, ['beban operasi', 'operating expense', 'beban usaha'], year) ||\n                            extractNumber(text, /(?:beban operasi|operating expense)[\\s\\S]{0,200}?([\\d,\\.]+)/);\n  \n  const ebit = findFinancialValue(text, ['ebit', 'laba operasi', 'operating income'], year) ||\n               grossProfit - operatingExpenses;\n  \n  const interestExpense = findFinancialValue(text, ['beban bunga', 'interest expense', 'biaya bunga'], year) ||\n                          extractNumber(text, /(?:beban bunga|interest expense)[\\s\\S]{0,200}?([\\d,\\.]+)/);\n  \n  const netProfit = findFinancialValue(text, ['laba bersih', 'net profit', 'net income', 'laba tahun berjalan'], year) ||\n                    extractNumber(text, /(?:laba bersih|net profit|net income)[\\s\\S]{0,200}?([\\d,\\.]+)/);\n  \n  // Extract Balance Sheet items (in millions)\n  const totalAssets = findFinancialValue(text, ['total aset', 'total assets', 'jumlah aset'], year) ||\n                      extractNumber(text, /(?:total aset|total assets)[\\s\\S]{0,200}?([\\d,\\.]+)/);\n  \n  const currentAssets = findFinancialValue(text, ['aset lancar', 'current assets', 'aktiva lancar'], year) ||\n                        extractNumber(text, /(?:aset lancar|current assets)[\\s\\S]{0,200}?([\\d,\\.]+)/);\n  \n  const totalLiabilities = findFinancialValue(text, ['total liabilitas', 'total liabilities', 'total kewajiban'], year) ||\n                           extractNumber(text, /(?:total liabilitas|total liabilities)[\\s\\S]{0,200}?([\\d,\\.]+)/);\n  \n  const currentLiabilities = findFinancialValue(text, ['liabilitas jangka pendek', 'current liabilities', 'kewajiban lancar'], year) ||\n                             extractNumber(text, /(?:liabilitas jangka pendek|current liabilities)[\\s\\S]{0,200}?([\\d,\\.]+)/);\n  \n  const totalDebt = findFinancialValue(text, ['total utang', 'total debt', 'pinjaman'], year) ||\n                    extractNumber(text, /(?:total utang|total debt|pinjaman)[\\s\\S]{0,200}?([\\d,\\.]+)/);\n  \n  const equity = findFinancialValue(text, ['total ekuitas', 'total equity', 'modal'], year) ||\n                 totalAssets - totalLiabilities;\n  \n  const cash = findFinancialValue(text, ['kas dan setara kas', 'cash and cash equivalents', 'kas'], year) ||\n               extractNumber(text, /(?:kas dan setara kas|cash and cash equivalents)[\\s\\S]{0,200}?([\\d,\\.]+)/);\n  \n  // Extract Cash Flow items (in millions)\n  const cfo = findFinancialValue(text, ['arus kas operasi', 'cash flow from operating', 'operating cash flow'], year) ||\n              extractNumber(text, /(?:arus kas operasi|operating activities)[\\s\\S]{0,200}?([\\d,\\.]+)/);\n  \n  const cfi = findFinancialValue(text, ['arus kas investasi', 'cash flow from investing', 'investing cash flow'], year) ||\n              extractNumber(text, /(?:arus kas investasi|investing activities)[\\s\\S]{0,200}?([\\d,\\.]+)/);\n  \n  const cff = findFinancialValue(text, ['arus kas pendanaan', 'cash flow from financing', 'financing cash flow'], year) ||\n              extractNumber(text, /(?:arus kas pendanaan|financing activities)[\\s\\S]{0,200}?([\\d,\\.]+)/);\n  \n  // Calculate Financial Ratios\n  const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0;\n  const operatingMargin = revenue > 0 ? (ebit / revenue) * 100 : 0;\n  const netMargin = revenue > 0 ? (netProfit / revenue) * 100 : 0;\n  \n  const roa = totalAssets > 0 ? (netProfit / totalAssets) * 100 : 0;\n  const roe = equity > 0 ? (netProfit / equity) * 100 : 0;\n  \n  const debtToEquity = equity > 0 ? totalDebt / equity : 0;\n  const debtToAssets = totalAssets > 0 ? totalDebt / totalAssets : 0;\n  \n  const currentRatio = currentLiabilities > 0 ? currentAssets / currentLiabilities : 0;\n  const quickRatio = currentLiabilities > 0 ? (currentAssets - (currentAssets * 0.3)) / currentLiabilities : 0; // Approximation\n  \n  const interestCoverage = interestExpense > 0 ? ebit / interestExpense : 0;\n  const assetTurnover = totalAssets > 0 ? revenue / totalAssets : 0;\n  \n  // Extract qualitative notes\n  const debtMaturityNotes = text.match(/(?:jatuh tempo|maturity|pelunasan utang)[\\s\\S]{0,500}/gi)?.[0] || 'Not found';\n  const capexNotes = text.match(/(?:belanja modal|capital expenditure|capex|investasi aset)[\\s\\S]{0,500}/gi)?.[0] || 'Not found';\n  const litigationNotes = text.match(/(?:litigasi|litigation|gugatan|perkara hukum)[\\s\\S]{0,500}/gi)?.[0] || 'No litigation mentioned';\n  const esgNotes = text.match(/(?:keberlanjutan|sustainability|esg|lingkungan|sosial|tata kelola)[\\s\\S]{0,500}/gi)?.[0] || 'Not found';\n  const corporateActionsNotes = text.match(/(?:aksi korporasi|corporate action|dividen|stock split|rights issue)[\\s\\S]{0,500}/gi)?.[0] || 'Not found';\n  \n  // Compile financial data for this year\n  financialData.push({\n    year: year,\n    // Income Statement\n    revenue: revenue,\n    cogs: cogs,\n    grossProfit: grossProfit,\n    operatingExpenses: operatingExpenses,\n    ebit: ebit,\n    interestExpense: interestExpense,\n    netProfit: netProfit,\n    \n    // Balance Sheet\n    totalAssets: totalAssets,\n    currentAssets: currentAssets,\n    totalLiabilities: totalLiabilities,\n    currentLiabilities: currentLiabilities,\n    totalDebt: totalDebt,\n    equity: equity,\n    cash: cash,\n    \n    // Cash Flow\n    cfo: cfo,\n    cfi: cfi,\n    cff: cff,\n    \n    // Profitability Ratios\n    grossMargin: Math.round(grossMargin * 100) / 100,\n    operatingMargin: Math.round(operatingMargin * 100) / 100,\n    netMargin: Math.round(netMargin * 100) / 100,\n    \n    // Return Ratios\n    roa: Math.round(roa * 100) / 100,\n    roe: Math.round(roe * 100) / 100,\n    \n    // Leverage Ratios\n    debtToEquity: Math.round(debtToEquity * 100) / 100,\n    debtToAssets: Math.round(debtToAssets * 100) / 100,\n    \n    // Liquidity Ratios\n    currentRatio: Math.round(currentRatio * 100) / 100,\n    quickRatio: Math.round(quickRatio * 100) / 100,\n    \n    // Other Ratios\n    interestCoverage: Math.round(interestCoverage * 100) / 100,\n    assetTurnover: Math.round(assetTurnover * 100) / 100,\n    \n    // Qualitative Notes\n    notes: {\n      debtMaturity: debtMaturityNotes.substring(0, 500),\n      capex: capexNotes.substring(0, 500),\n      litigation: litigationNotes.substring(0, 500),\n      esg: esgNotes.substring(0, 500),\n      corporateActions: corporateActionsNotes.substring(0, 500)\n    }\n  });\n}\n\n// Calculate 5-year trends\nconst trends = {\n  revenueGrowth: financialData.length >= 2 ? \n    ((financialData[financialData.length - 1].revenue - financialData[0].revenue) / financialData[0].revenue * 100) : 0,\n  profitGrowth: financialData.length >= 2 ? \n    ((financialData[financialData.length - 1].netProfit - financialData[0].netProfit) / financialData[0].netProfit * 100) : 0,\n  assetGrowth: financialData.length >= 2 ? \n    ((financialData[financialData.length - 1].totalAssets - financialData[0].totalAssets) / financialData[0].totalAssets * 100) : 0,\n  avgROE: financialData.reduce((sum, d) => sum + d.roe, 0) / financialData.length,\n  avgROA: financialData.reduce((sum, d) => sum + d.roa, 0) / financialData.length,\n  avgNetMargin: financialData.reduce((sum, d) => sum + d.netMargin, 0) / financialData.length\n};\n\n// Return consolidated output\nreturn [{\n  json: {\n    company: config.company_name,\n    ticker: config.stock_ticker,\n    period: `${financialData[0]?.year || 'N/A'} - ${financialData[financialData.length - 1]?.year || 'N/A'}`,\n    financialData: financialData,\n    trends: trends,\n    summary: {\n      totalYears: financialData.length,\n      latestRevenue: financialData[financialData.length - 1]?.revenue || 0,\n      latestNetProfit: financialData[financialData.length - 1]?.netProfit || 0,\n      latestROE: financialData[financialData.length - 1]?.roe || 0,\n      latestDebtToEquity: financialData[financialData.length - 1]?.debtToEquity || 0,\n      latestCurrentRatio: financialData[financialData.length - 1]?.currentRatio || 0\n    },\n    extractedAt: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "8671f32a-b014-44b4-8743-b2a6cb0a90ff",
+      "name": "Extract Financial Ratios (5Y)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4496,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Provide empty financial ratios if annual reports are not available\nconst config = $('Workflow Configuration').first().json;\nreturn [{\n  json: {\n    financialData: [],\n    trends: {},\n    summary: {\n      totalYears: 0,\n      latestRevenue: 0,\n      latestNetProfit: 0,\n      latestROE: 0,\n      latestDebtToEquity: 0,\n      latestCurrentRatio: 0\n    },\n    note: 'Annual report analysis skipped (annual_report_urls not provided or discovery failed).',\n    stock_ticker: config.stock_ticker,\n    run_id: config.run_id\n  }\n}];\n"
+      },
+      "id": "0ec162a4-aba8-494a-b2c3-da1102039eb8",
+      "name": "Set Empty Financial Ratios",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4496,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "id-1",
+              "leftValue": "={{ $('Workflow Configuration').item.json.bond_identifiers }}",
+              "operator": {
+                "type": "array",
+                "operation": "notEmpty"
+              }
+            },
+            {
+              "id": "id-2",
+              "leftValue": "={{ $('Workflow Configuration').item.json.bond_api_url }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "98348172-7666-4105-a0d6-9621cd6dca3c",
+      "name": "Check Bond Data Available",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        4720,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Workflow Configuration').item.json.bond_api_url }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "isin",
+              "value": "={{ $('Workflow Configuration').item.json.bond_identifiers.join(',') }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ebbf32be-464d-4ce5-a6cf-88fcee6904f0",
+      "name": "Fetch Bond Data (Optional)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        4944,
+        272
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize bond API response to bond_data (best-effort)\nconst resp = $json || {};\nreturn [{\n  json: {\n    bond_data: resp,\n    bond_records: Array.isArray(resp) ? resp.length : (resp?.data && Array.isArray(resp.data) ? resp.data.length : null),\n  }\n}];\n"
+      },
+      "id": "f23ba07f-6b15-43c8-8f08-7f9eb9573e21",
+      "name": "Parse Bond Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5168,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Provide empty bond data if not configured\nconst config = $('Workflow Configuration').first().json;\nreturn [{\n  json: {\n    bond_data: null,\n    note: 'Bond market data skipped (bond_api_url and/or bond_identifiers not provided).',\n    stock_ticker: config.stock_ticker,\n    run_id: config.run_id\n  }\n}];\n"
+      },
+      "id": "dba31c0f-b34b-4a2f-97eb-ff118f248f8b",
+      "name": "Set Empty Bond Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5168,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Assemble all data into a single context object for the AI agent\nfunction safeFirst(name) {\n  try { return $(name).first().json; } catch (e) { return {}; }\n}\n\nconst config = safeFirst('Workflow Configuration');\nconst profileOut = safeFirst('Parse Company Profile');\nconst stockOut = safeFirst('Calculate Stock Analytics (5Y)');\nconst stockEmpty = safeFirst('Set Empty Stock Analytics');\nconst newsOut = safeFirst('Deduplicate & Clean News');\nconst swotOut = safeFirst('Classify News to SWOT');\nconst ratiosOut = safeFirst('Extract Financial Ratios (5Y)');\nconst ratiosEmpty = safeFirst('Set Empty Financial Ratios');\nconst bondOut = safeFirst('Parse Bond Data');\nconst bondEmpty = safeFirst('Set Empty Bond Data');\n\nconst stock_analytics = stockOut.stock_analytics ?? stockEmpty.stock_analytics ?? null;\nconst stock_datapoints = stockOut.stock_datapoints ?? stockEmpty.stock_datapoints ?? 0;\n\nconst cleaned_news = newsOut.cleanedNews ?? newsOut.news ?? [];\nconst news_count = newsOut.newsCount ?? (Array.isArray(cleaned_news) ? cleaned_news.length : 0);\n\nconst classifiedNews = swotOut.classifiedNews ?? [];\nconst financial = (ratiosOut.financialData ? ratiosOut : ratiosEmpty);\nconst bond = (bondOut.bond_data !== undefined ? bondOut : bondEmpty);\n\nconst company_profile = profileOut.company_profile || {};\nconst company_name = profileOut.company_name_effective || config.company_name || company_profile.company_name || '';\n\nconst context = {\n  run_id: config.run_id,\n  company: {\n    name: company_name,\n    ticker: config.stock_ticker,\n    profile: company_profile\n  },\n  inputs: {\n    period_years: config.period_years,\n    benchmark_ticker: config.benchmark_ticker,\n    news_query: config.news_query,\n    annual_report_urls: config.annual_report_urls || [],\n    has_stock_sheet: Boolean(config.google_sheet_id),\n    has_drive_folder: Boolean(config.drive_folder_id),\n    recipients_email: config.recipients_email || []\n  },\n  market_data: {\n    stock: {\n      analytics: stock_analytics,\n      datapoints: stock_datapoints\n    },\n    bond: bond.bond_data || null\n  },\n  news_intelligence: {\n    cleaned_news: cleaned_news.slice(0, config.max_news_items || 25),\n    classified_news: classifiedNews.slice(0, config.max_news_items || 25),\n    totals: {\n      cleaned: news_count,\n      classified: classifiedNews.length\n    }\n  },\n  financial_analysis: {\n    extracted: financial,\n    note: financial.note || null\n  },\n  notes: {\n    stock_note: stockOut.note || stockEmpty.note || null,\n    bond_note: bond.note || null\n  },\n  generated_at: new Date().toISOString()\n};\n\nreturn [{\n  json: {\n    run_id: config.run_id,\n    stock_ticker: config.stock_ticker,\n    company_name,\n    context\n  }\n}];\n"
+      },
+      "id": "3eaeed52-695d-4538-bd1e-2feb11a9a1a6",
+      "name": "Assemble Analysis Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5392,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Anda adalah konsultan strategi dan keuangan setara Big-4, fokus pada analisis emiten Indonesia (Perusahaan Terbuka) untuk kebutuhan internal (bukan rekomendasi investasi). \nTugas: buat laporan analisis komprehensif berbasis data yang diberikan: SWOT, analisis industri/kompetitor secara high-level, tren harga saham, volatilitas dan drawdown, kualitas laba, struktur modal, likuiditas, dan temuan penting dari berita (materiality), serta data obligasi bila tersedia.\nKeluaran harus berupa JSON yang valid dan mengikuti schema output parser. Jangan gunakan markdown code fence.\n\nKonteks data (JSON):\n{{ JSON.stringify($json.context) }}\n\nAturan:\n- Jangan memberikan rekomendasi beli/jual/target harga. Fokus pada fakta, analisis, dan risk factors.\n- Jelaskan asumsi dan keterbatasan data (mis. keterbatasan annual report parsing, data bond tidak tersedia, dsb).\n- Untuk SWOT: berikan poin yang spesifik, evidence-based, dan traceable ke data (news themes/ratios/market).\n- Sertakan ringkasan eksekutif, temuan utama, dan daftar risiko serta mitigasi yang masuk akal.\n\n",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "Anda adalah analis keuangan senior dari firma konsultan Big-4. Tugas Anda: buat laporan analisis emiten Indonesia (konteks OJK/IDX) berbasis data 5 tahun terakhir dalam Bahasa Indonesia.\n\nGaya Penulisan Big-4:\n- Heading jelas dengan struktur hierarki\n- Bullet points untuk key messages\n- Evidence-based: setiap poin SWOT harus disertai bukti dari data\n- Sebutkan asumsi dan keterbatasan data secara eksplisit\n- Profesional, objektif, tidak memberikan rekomendasi investasi eksplisit (tidak ada buy/sell/target price)\n\nStruktur Laporan:\n1. Executive Summary: ringkasan 10-15 baris mencakup key findings\n2. Company Overview: profil perusahaan dan industri\n3. Stock Performance Analysis: narasi tren saham 5Y, metrik kunci (CAGR, volatilitas, drawdown, korelasi benchmark)\n4. Bond View: jika ada data obligasi, analisis yield/price/stress period; jika tidak ada, tulis limitations dan data yang dibutuhkan\n5. Financial Analysis: highlights keuangan 5Y, tabel rasio (margin, ROA, ROE, leverage, liquidity, coverage), catatan penting (debt maturity, capex, litigasi, ESG)\n6. SWOT Analysis: Strength/Weakness/Opportunity/Threat dengan evidence per poin, tema klasifikasi\n7. Key Risks: daftar risiko material yang teridentifikasi\n8. Governance, ESG & Regulatory Notes: catatan tata kelola, ESG, dan regulasi\n9. Appendix: sumber data, asumsi, metodologi\n\nPenting: Jangan berikan rekomendasi investasi eksplisit. Fokus pada analisis objektif berbasis data."
+        }
+      },
+      "id": "73f28f68-8606-4557-839a-623a36b51323",
+      "name": "AI Agent - Generate Big4 Report",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        5616,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Convert structured report JSON to HTML and attach JSON + HTML as binary\nconst report = $json || {};\nconst run = (() => { try { return $('Assemble Analysis Context').first().json; } catch(e){ return {}; }})();\nconst config = (() => { try { return $('Workflow Configuration').first().json; } catch(e){ return {}; }})();\n\nconst companyName = report.company_name || run.company_name || config.company_name || '';\nconst stockTicker = report.stock_ticker || run.stock_ticker || config.stock_ticker || '';\nconst reportDate = new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });\n\n// Helpers\nfunction esc(s){ return String(s ?? '').replace(/[&<>\"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c])); }\nfunction li(arr){ return (arr||[]).map(x => `<li>${esc(x)}</li>`).join(''); }\nfunction kvTable(obj){\n  if (!obj || typeof obj !== 'object') return '';\n  const rows = Object.entries(obj).map(([k,v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');\n  return `<table><tbody>${rows}</tbody></table>`;\n}\n\nconst html = `<!doctype html>\n<html lang=\"id\">\n<head>\n<meta charset=\"utf-8\"/>\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"/>\n<title>Analisa Emiten - ${esc(stockTicker)}</title>\n<style>\n  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,\"Helvetica Neue\",Arial;margin:0;background:#fff;color:#0f172a;}\n  .wrap{max-width:1000px;margin:0 auto;padding:28px 18px;}\n  h1{margin:0;font-size:24px;}\n  h2{margin:26px 0 10px;font-size:18px;border-bottom:1px solid #e2e8f0;padding-bottom:6px;}\n  h3{margin:18px 0 8px;font-size:15px;}\n  .meta{color:#475569;font-size:13px;margin-top:6px;}\n  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}\n  .card{border:1px solid #e2e8f0;border-radius:12px;padding:14px;}\n  ul{margin:8px 0 0 18px;}\n  table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px;}\n  td,th{border:1px solid #e2e8f0;padding:8px;vertical-align:top;}\n  th{background:#f8fafc;text-align:left;}\n  .muted{color:#475569;}\n  .small{font-size:12px;}\n  .pill{display:inline-block;background:#f1f5f9;border:1px solid #e2e8f0;padding:2px 8px;border-radius:999px;font-size:12px;margin-right:6px;}\n</style>\n</head>\n<body>\n  <div class=\"wrap\">\n    <div>\n      <h1>Analisa Emiten: ${esc(companyName)} <span class=\"pill\">${esc(stockTicker)}</span></h1>\n      <div class=\"meta\">Tanggal laporan: ${esc(reportDate)} | run_id: ${esc(config.run_id || run.run_id || '')}</div>\n    </div>\n\n    <h2>Executive Summary</h2>\n    <div class=\"card\">\n      <p>${esc(report.executive_summary || '')}</p>\n      ${(report.key_findings && report.key_findings.length) ? `<h3>Key Findings</h3><ul>${li(report.key_findings)}</ul>` : ''}\n    </div>\n\n    <h2>SWOT</h2>\n    <div class=\"grid\">\n      <div class=\"card\"><h3>Strengths</h3><ul>${li(report.swot?.strengths)}</ul></div>\n      <div class=\"card\"><h3>Weaknesses</h3><ul>${li(report.swot?.weaknesses)}</ul></div>\n      <div class=\"card\"><h3>Opportunities</h3><ul>${li(report.swot?.opportunities)}</ul></div>\n      <div class=\"card\"><h3>Threats</h3><ul>${li(report.swot?.threats)}</ul></div>\n    </div>\n\n    <h2>Market Performance</h2>\n    <div class=\"grid\">\n      <div class=\"card\">\n        <h3>Stock</h3>\n        <p class=\"muted small\">Ringkasan metrik dari data harga (jika tersedia).</p>\n        ${kvTable(report.market_performance?.stock_summary)}\n      </div>\n      <div class=\"card\">\n        <h3>Bond</h3>\n        <p class=\"muted small\">Best-effort (bergantung konfigurasi bond_api_url).</p>\n        ${kvTable(report.market_performance?.bond_summary)}\n      </div>\n    </div>\n\n    <h2>Financial Analysis</h2>\n    <div class=\"card\">\n      <p>${esc(report.financial_analysis?.overview || '')}</p>\n      ${(report.financial_analysis?.ratios_highlights?.length) ? `<h3>Ratio Highlights</h3><ul>${li(report.financial_analysis.ratios_highlights)}</ul>` : ''}\n      ${(report.financial_analysis?.trend_notes?.length) ? `<h3>Trend Notes</h3><ul>${li(report.financial_analysis.trend_notes)}</ul>` : ''}\n    </div>\n\n    <h2>News & Materiality</h2>\n    <div class=\"card\">\n      <p>${esc(report.news_analysis?.overview || '')}</p>\n      ${(report.news_analysis?.material_events?.length) ? `<h3>Material Events</h3><ul>${li(report.news_analysis.material_events)}</ul>` : ''}\n      ${(report.news_analysis?.themes?.length) ? `<h3>Themes</h3><ul>${li(report.news_analysis.themes)}</ul>` : ''}\n    </div>\n\n    <h2>Risks & Mitigations</h2>\n    <div class=\"card\">\n      ${(report.risks_and_mitigations?.risks?.length) ? `<h3>Risks</h3><ul>${li(report.risks_and_mitigations.risks)}</ul>` : ''}\n      ${(report.risks_and_mitigations?.mitigations?.length) ? `<h3>Mitigations</h3><ul>${li(report.risks_and_mitigations.mitigations)}</ul>` : ''}\n    </div>\n\n    <h2>Assumptions & Limitations</h2>\n    <div class=\"card\">\n      <ul>${li(report.assumptions_and_limitations || [])}</ul>\n    </div>\n\n  </div>\n</body>\n</html>`;\n\nconst htmlBin = Buffer.from(html, 'utf-8').toString('base64');\nconst jsonBin = Buffer.from(JSON.stringify(report, null, 2), 'utf-8').toString('base64');\n\nreturn [{\n  json: {\n    status: 'ok',\n    run_id: config.run_id || run.run_id || null,\n    company_name: companyName,\n    stock_ticker: stockTicker,\n    report_date: reportDate\n  },\n  binary: {\n    report_html: {\n      data: htmlBin,\n      mimeType: 'text/html',\n      fileName: `${(stockTicker || 'EMITEN').replace('IDX:','')}_Analysis_Report_${new Date().toISOString().split('T')[0]}.html`\n    },\n    report_json: {\n      data: jsonBin,\n      mimeType: 'application/json',\n      fileName: `${(stockTicker || 'EMITEN').replace('IDX:','')}_Analysis_Report_${new Date().toISOString().split('T')[0]}.json`\n    }\n  }\n}];\n"
+      },
+      "id": "8453720f-c5e1-45f3-bc99-146fd7f90505",
+      "name": "Format Report (HTML + JSON)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5968,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"executive_summary\": {\n      \"type\": \"string\",\n      \"description\": \"High-level summary of the investment analysis and key findings\"\n    },\n    \"company_overview\": {\n      \"type\": \"string\",\n      \"description\": \"Overview of the company, its business model, and market position\"\n    },\n    \"industry\": {\n      \"type\": \"string\",\n      \"description\": \"Industry sector and competitive landscape analysis\"\n    },\n    \"stock_performance\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"narrative\": {\n          \"type\": \"string\",\n          \"description\": \"Narrative analysis of stock performance over the period\"\n        },\n        \"metrics\": {\n          \"type\": \"object\",\n          \"description\": \"Key performance metrics and statistics\"\n        }\n      },\n      \"required\": [\"narrative\", \"metrics\"]\n    },\n    \"bond_view\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"narrative\": {\n          \"type\": \"string\",\n          \"description\": \"Analysis of bond performance and creditworthiness\"\n        },\n        \"limitations\": {\n          \"type\": \"string\",\n          \"description\": \"Limitations and caveats in the bond analysis\"\n        }\n      },\n      \"required\": [\"narrative\", \"limitations\"]\n    },\n    \"financial_analysis\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"highlights\": {\n          \"type\": \"string\",\n          \"description\": \"Key financial highlights and trends\"\n        },\n        \"tables\": {\n          \"type\": \"array\",\n          \"items\": {\n            \"type\": \"object\"\n          },\n          \"description\": \"Financial data tables and ratios\"\n        }\n      },\n      \"required\": [\"highlights\", \"tables\"]\n    },\n    \"swot\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"S\": {\n          \"type\": \"array\",\n          \"items\": {\n            \"type\": \"string\"\n          },\n          \"description\": \"Strengths\"\n        },\n        \"W\": {\n          \"type\": \"array\",\n          \"items\": {\n            \"type\": \"string\"\n          },\n          \"description\": \"Weaknesses\"\n        },\n        \"O\": {\n          \"type\": \"array\",\n          \"items\": {\n            \"type\": \"string\"\n          },\n          \"description\": \"Opportunities\"\n        },\n        \"T\": {\n          \"type\": \"array\",\n          \"items\": {\n            \"type\": \"string\"\n          },\n          \"description\": \"Threats\"\n        }\n      },\n      \"required\": [\"S\", \"W\", \"O\", \"T\"]\n    },\n    \"key_risks\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"string\"\n      },\n      \"description\": \"Key investment risks identified\"\n    },\n    \"governance_esg_regulatory_notes\": {\n      \"type\": \"string\",\n      \"description\": \"Notes on corporate governance, ESG factors, and regulatory compliance\"\n    },\n    \"appendix\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"sources\": {\n          \"type\": \"array\",\n          \"items\": {\n            \"type\": \"string\"\n          },\n          \"description\": \"Data sources used in the analysis\"\n        },\n        \"assumptions\": {\n          \"type\": \"array\",\n          \"items\": {\n            \"type\": \"string\"\n          },\n          \"description\": \"Key assumptions made in the analysis\"\n        },\n        \"methodology\": {\n          \"type\": \"string\",\n          \"description\": \"Methodology used for the analysis\"\n        }\n      },\n      \"required\": [\"sources\", \"assumptions\", \"methodology\"]\n    }\n  },\n  \"required\": [\n    \"executive_summary\",\n    \"company_overview\",\n    \"industry\",\n    \"stock_performance\",\n    \"bond_view\",\n    \"financial_analysis\",\n    \"swot\",\n    \"key_risks\",\n    \"governance_esg_regulatory_notes\",\n    \"appendix\"\n  ]\n}"
+      },
+      "id": "82351236-682d-4b80-a449-45893008623b",
+      "name": "Structured Output Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        5760,
+        592
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "gpt-4o"
+        },
+        "builtInTools": {},
+        "options": {
+          "temperature": 0.3
+        }
+      },
+      "id": "1c60b68a-05d6-490a-a35f-f098b76c75ac",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        5632,
+        592
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "id-1",
+              "leftValue": "={{ $('Workflow Configuration').item.json.drive_folder_id }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "30792eae-d14f-4f6e-9be5-f08e0e95f529",
+      "name": "Check Drive Folder Provided",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        6192,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare final summary including (optional) Drive links\nconst cfg = $('Workflow Configuration').first().json;\n\nfunction safeFirst(name){\n  try { return $(name).first().json; } catch(e){ return {}; }\n}\n\nconst linksObj = safeFirst('Collect Drive Links').drive_links || {};\nconst drive_links = {\n  report_html: linksObj.report_html || null,\n  report_json: linksObj.report_json || null,\n  raw_payload: linksObj.raw_payload || null\n};\n\nconst stockEmpty = safeFirst('Set Empty Stock Analytics');\nconst ratiosEmpty = safeFirst('Set Empty Financial Ratios');\nconst bondEmpty = safeFirst('Set Empty Bond Data');\n\nreturn [{\n  json: {\n    status: 'success',\n    run_id: cfg.run_id,\n    company_name: cfg.company_name || null,\n    stock_ticker: cfg.stock_ticker,\n    drive_links,\n    notes: {\n      stock: stockEmpty.note || null,\n      annual_reports: ratiosEmpty.note || null,\n      bonds: bondEmpty.note || null\n    }\n  }\n}];\n"
+      },
+      "id": "77656e22-ef00-4bad-a762-4ab283bf9cd3",
+      "name": "Prepare Output Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7088,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "id-1",
+              "leftValue": "={{ $('Workflow Configuration').item.json.recipients_email }}",
+              "operator": {
+                "type": "array",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "50823786-dda6-46df-b0dc-e4eed3972e9f",
+      "name": "Check Email Recipients",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        7312,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Workflow Configuration').item.json.recipients_email.join(',') }}",
+        "subject": "={{ 'Laporan Analisa Emiten: ' + ($('Workflow Configuration').item.json.company_name || $('Workflow Configuration').item.json.stock_ticker) + ' (' + $('Workflow Configuration').item.json.stock_ticker + ')' }}",
+        "message": "=Laporan analisa emiten telah selesai dibuat.\n\nRun ID: {{ $('Workflow Configuration').item.json.run_id }}\nEmiten: {{ $('Workflow Configuration').item.json.company_name || '-' }} ({{ $('Workflow Configuration').item.json.stock_ticker }})\n\nTautan (jika diunggah ke Drive):\n- Report HTML: {{ $json.drive_links?.report_html || '-' }}\n- Report JSON: {{ $json.drive_links?.report_json || '-' }}\n- Raw Payload: {{ $json.drive_links?.raw_payload || '-' }}\n\nCatatan:\n- Data saham: {{ $json.notes?.stock || '-' }}\n- Annual report: {{ $json.notes?.annual_reports || '-' }}\n- Obligasi: {{ $json.notes?.bonds || '-' }}\n\nDokumen ini bersifat analitis dan tidak merupakan rekomendasi investasi.\n",
+        "options": {}
+      },
+      "id": "a4fa79c0-f317-4cda-b5aa-6d346fd2cf14",
+      "name": "Send Email Notification",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        7536,
+        288
+      ],
+      "webhookId": "0a67f55c-56b4-4b33-97a0-637e474c2b1d",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "id-1",
+              "leftValue": "={{ $('Workflow Configuration').item.json.__source }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "rightValue": "webhook"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b5a84e6e-d2b3-4a0d-b2ae-1e520cd4b4ca",
+      "name": "Is Webhook Execution?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        7760,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "3550b95d-69c1-48c1-b859-1e73773a049e",
+      "name": "Respond (Run)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        7984,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare 3 upload items (report_html, report_json, raw_payload) using a single binary field name: file\nconst cfg = $('Workflow Configuration').first().json;\nconst fmt = $input.first(); // from Format Report (HTML + JSON)\nconst bin = fmt.binary || {};\n\nlet ctx = {};\ntry { ctx = $('Assemble Analysis Context').first().json.context || {}; } catch(e) {}\nconst payload = { config: cfg, context: ctx, generated_at: new Date().toISOString() };\nconst rawBin = Buffer.from(JSON.stringify(payload, null, 2), 'utf-8').toString('base64');\n\nconst items = [];\n\nif (bin.report_html) {\n  items.push({ json: { kind: 'report_html', run_id: cfg.run_id }, binary: { file: { ...bin.report_html } } });\n}\nif (bin.report_json) {\n  items.push({ json: { kind: 'report_json', run_id: cfg.run_id }, binary: { file: { ...bin.report_json } } });\n}\nitems.push({\n  json: { kind: 'raw_payload', run_id: cfg.run_id },\n  binary: {\n    file: {\n      data: rawBin,\n      mimeType: 'application/json',\n      fileName: `${cfg.run_id}_RawPayload.json`\n    }\n  }\n});\n\nreturn items;\n"
+      },
+      "id": "e53d010c-dabd-4c32-9938-1b8b5788152e",
+      "name": "Prepare Drive Upload Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6416,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "inputDataFieldName": "file",
+        "name": "={{ $binary.file.fileName }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Workflow Configuration').item.json.drive_folder_id }}"
+        },
+        "options": {
+          "simplifyOutput": true
+        }
+      },
+      "id": "13cb82b2-a185-47e5-b9ce-9035b535b40a",
+      "name": "Upload Files to Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        6640,
+        288
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Collect Drive links from uploaded items\nconst items = $input.all();\nconst links = {};\nfor (const it of items) {\n  const kind = it.json.kind;\n  const j = it.json || {};\n  // googleDrive node output fields often include id, webViewLink, webContentLink\n  const link = j.webViewLink || j.webContentLink || j.id || null;\n  if (kind) links[kind] = link;\n}\nreturn [{\n  json: { drive_links: links }\n}];\n"
+      },
+      "id": "e31662d9-5357-4675-8712-0c0d74cae47f",
+      "name": "Collect Drive Links",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6864,
+        288
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook Trigger (UI Form)": {
+      "main": [
+        [
+          {
+            "node": "Build UI HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build UI HTML": {
+      "main": [
+        [
+          {
+            "node": "Respond UI (HTML)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Trigger (Run)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger (Weekly)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Input": {
+      "main": [
+        [
+          {
+            "node": "Auto-Find Annual Reports?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auto-Find Annual Reports?": {
+      "main": [
+        [
+          {
+            "node": "IDX - Announcement Lookup (Annual Reports)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Workflow Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IDX - Announcement Lookup (Annual Reports)": {
+      "main": [
+        [
+          {
+            "node": "Parse Annual Report Links",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Annual Report Links": {
+      "main": [
+        [
+          {
+            "node": "Workflow Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow Configuration": {
+      "main": [
+        [
+          {
+            "node": "IDX - Company Profiles Lookup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IDX - Company Profiles Lookup": {
+      "main": [
+        [
+          {
+            "node": "Parse Company Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Company Profile": {
+      "main": [
+        [
+          {
+            "node": "Check Stock Sheet Provided",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Stock Sheet Provided": {
+      "main": [
+        [
+          {
+            "node": "Read Stock Price Data (5Y)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set Empty Stock Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Stock Price Data (5Y)": {
+      "main": [
+        [
+          {
+            "node": "Parse & Clean Stock Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse & Clean Stock Data": {
+      "main": [
+        [
+          {
+            "node": "Calculate Stock Analytics (5Y)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Stock Analytics (5Y)": {
+      "main": [
+        [
+          {
+            "node": "Fetch News from RSS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Empty Stock Analytics": {
+      "main": [
+        [
+          {
+            "node": "Fetch News from RSS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch News from RSS": {
+      "main": [
+        [
+          {
+            "node": "Deduplicate & Clean News",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Deduplicate & Clean News": {
+      "main": [
+        [
+          {
+            "node": "Classify News to SWOT",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify News to SWOT": {
+      "main": [
+        [
+          {
+            "node": "Check Annual Report URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Annual Report URLs": {
+      "main": [
+        [
+          {
+            "node": "Prepare Annual Report Items",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set Empty Financial Ratios",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Annual Report Items": {
+      "main": [
+        [
+          {
+            "node": "Download Annual Report PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Annual Report PDF": {
+      "main": [
+        [
+          {
+            "node": "Extract Text from Annual Reports",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Text from Annual Reports": {
+      "main": [
+        [
+          {
+            "node": "Extract Financial Ratios (5Y)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Financial Ratios (5Y)": {
+      "main": [
+        [
+          {
+            "node": "Check Bond Data Available",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Empty Financial Ratios": {
+      "main": [
+        [
+          {
+            "node": "Check Bond Data Available",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Bond Data Available": {
+      "main": [
+        [
+          {
+            "node": "Fetch Bond Data (Optional)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Set Empty Bond Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Bond Data (Optional)": {
+      "main": [
+        [
+          {
+            "node": "Parse Bond Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Bond Data": {
+      "main": [
+        [
+          {
+            "node": "Assemble Analysis Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Empty Bond Data": {
+      "main": [
+        [
+          {
+            "node": "Assemble Analysis Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assemble Analysis Context": {
+      "main": [
+        [
+          {
+            "node": "AI Agent - Generate Big4 Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent - Generate Big4 Report": {
+      "main": [
+        [
+          {
+            "node": "Format Report (HTML + JSON)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Report (HTML + JSON)": {
+      "main": [
+        [
+          {
+            "node": "Check Drive Folder Provided",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Drive Folder Provided": {
+      "main": [
+        [
+          {
+            "node": "Prepare Drive Upload Items",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Output Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Drive Upload Items": {
+      "main": [
+        [
+          {
+            "node": "Upload Files to Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Files to Drive": {
+      "main": [
+        [
+          {
+            "node": "Collect Drive Links",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Drive Links": {
+      "main": [
+        [
+          {
+            "node": "Prepare Output Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Output Summary": {
+      "main": [
+        [
+          {
+            "node": "Check Email Recipients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Email Recipients": {
+      "main": [
+        [
+          {
+            "node": "Send Email Notification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Webhook Execution?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email Notification": {
+      "main": [
+        [
+          {
+            "node": "Is Webhook Execution?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Webhook Execution?": {
+      "main": [
+        [
+          {
+            "node": "Respond (Run)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent - Generate Big4 Report",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent - Generate Big4 Report",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "f3499be4-6f5c-4f10-aad1-88281835bd4c",
+  "meta": {
+    "instanceId": "80ab7af99b8e1c2fa31094125423af3483318ca515bb60ecf0f30a1ebe1ae751"
+  },
+  "id": "DabytJsPfHepuN0i",
+  "tags": []
+}
