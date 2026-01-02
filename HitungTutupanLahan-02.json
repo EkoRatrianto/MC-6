@@ -1,0 +1,571 @@
+{
+  "name": "HitungTutupanLahan-02",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "months",
+              "monthsInterval": 3,
+              "triggerAtHour": 2
+            }
+          ]
+        }
+      },
+      "id": "16581847-1a0a-4416-8d60-64b17feb07bc",
+      "name": "Schedule Trigger - Quarterly Data Collection",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1056,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cc038267-fb1d-4f8a-9e4a-6219feac8b7f",
+              "name": "aoi",
+              "value": "={{ {\"type\":\"Polygon\",\"coordinates\":[[[106.7000,-6.3000],[106.7000,-6.1000],[107.0000,-6.1000],[107.0000,-6.3000],[106.7000,-6.3000]]] } }}",
+              "type": "json"
+            },
+            {
+              "id": "cf2607d8-33a4-4173-91d2-8a8210c6d807",
+              "name": "pixelSizeMeters",
+              "value": 10,
+              "type": "number"
+            },
+            {
+              "id": "e9dd1470-9136-4255-a17c-44f6d4a8924e",
+              "name": "treeNdviThreshold",
+              "value": 0.5,
+              "type": "number"
+            },
+            {
+              "id": "6f26a2c7-1d9f-49ce-bd26-19aa824b65f0",
+              "name": "cloudCoverMax",
+              "value": 20,
+              "type": "number"
+            },
+            {
+              "id": "3e3b463b-1bb7-4eb9-90c0-526b3f7c7c79",
+              "name": "satelliteApiBaseUrl",
+              "value": "https://example.com/api/landcover-stats",
+              "type": "string"
+            },
+            {
+              "id": "6bfcba67-1f1a-4e1c-9a5c-2b06f9e1423d",
+              "name": "googleSheetId",
+              "value": "REPLACE_WITH_YOUR_SHEET_ID",
+              "type": "string"
+            },
+            {
+              "id": "c8df1f78-9c80-4f35-96d9-ae43b95e84ef",
+              "name": "googleSheetTabName",
+              "value": "Quarterly_LandCover_Report",
+              "type": "string"
+            },
+            {
+              "id": "5b3c2ec4-bb84-48f6-814b-7b77b4b3a03f",
+              "name": "timeZone",
+              "value": "Asia/Jakarta",
+              "type": "string"
+            },
+            {
+              "id": "a409bdad-a2ff-4b6b-92b0-e51a43e9f9d8",
+              "name": "reportLocale",
+              "value": "id-ID",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {
+          "dotNotation": true
+        }
+      },
+      "id": "ef8242a7-9a7b-4005-af89-c593cbbaf522",
+      "name": "Workflow Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -832,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * Output: 20 kuartal terakhir (5 tahun) sampai kuartal terakhir yang sudah selesai.\n * Setiap item membawa konfigurasi (AOI, threshold, dll) + startDate/endDate/periodLabel.\n * Sekaligus reset penampung hasil (staticData.results) untuk eksekusi ini.\n */\nconst cfg = $input.first().json;\n\nconst staticData = this.getWorkflowStaticData('global');\nstaticData.results = [];\nstaticData.generatedAt = new Date().toISOString();\n\nconst now = new Date();\nconst currentQ = Math.floor(now.getUTCMonth() / 3) + 1; // 1..4\nlet endQ = currentQ - 1;\nlet endYear = now.getUTCFullYear();\nif (endQ === 0) {\n  endQ = 4;\n  endYear -= 1;\n}\n\nfunction quarterStartUTC(year, q) {\n  const m = (q - 1) * 3; // 0,3,6,9\n  return new Date(Date.UTC(year, m, 1, 0, 0, 0, 0));\n}\n\nconst periods = [];\nfor (let i = 19; i >= 0; i--) {\n  let q = endQ - i;\n  let y = endYear;\n  while (q <= 0) { q += 4; y -= 1; }\n\n  const start = quarterStartUTC(y, q);\n  const nextQ = q === 4 ? 1 : q + 1;\n  const nextY = q === 4 ? y + 1 : y;\n  const endExclusive = quarterStartUTC(nextY, nextQ);\n  const endInclusive = new Date(endExclusive);\n  endInclusive.setUTCDate(endInclusive.getUTCDate() - 1);\n\n  const startDate = start.toISOString().slice(0, 10);\n  const endDate = endInclusive.toISOString().slice(0, 10);\n\n  periods.push({\n    ...cfg,\n    periodLabel: `${y}-Q${q}`,\n    startDate,\n    endDate,\n  });\n}\n\nreturn periods.map(p => ({ json: p }));\n"
+      },
+      "id": "e4ccf9b8-86ed-45aa-a953-89d0d0bd3783",
+      "name": "Generate Date List for 5 Years",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -608,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "reset": true
+        }
+      },
+      "id": "0909cacd-4f5d-4b17-a529-342927197143",
+      "name": "Loop Over Date Periods",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -384,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.satelliteApiBaseUrl }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "accept",
+              "value": "application/json"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"aoi\": {{ JSON.stringify($json.aoi) }},\n  \"startDate\": \"{{ $json.startDate }}\",\n  \"endDate\": \"{{ $json.endDate }}\",\n  \"cloudCoverMax\": {{ $json.cloudCoverMax }},\n  \"treeNdviThreshold\": {{ $json.treeNdviThreshold }},\n  \"pixelSizeMeters\": {{ $json.pixelSizeMeters }}\n}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1
+            }
+          },
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "6688afce-a384-4776-9397-4d1d0e341eef",
+      "name": "Fetch Satellite Imagery Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -176,
+        -192
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "f7172275-4e22-4b20-b289-cea72a01c9a3",
+      "name": "Merge Request Context + Response",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        80,
+        -192
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * Menghitung Non-Tree Area (ha) dari respons API dan menyimpan hasil per kuartal\n * ke staticData.results (dipakai setelah loop selesai).\n *\n * Ekspektasi minimum respons (boleh salah satu):\n * - body.treeAreaHa / body.totalAreaHa\n * - body.tree_area_ha / body.total_area_ha\n * - body.nonTreeAreaHa (+ optional tree/total)\n */\nconst input = $json;\n\n// Jika HTTP Request memakai fullResponse=true, respons ada di input.body\nconst body = input.body ?? input;\n\nconst tree =\n  Number(body.treeAreaHa ?? body.tree_area_ha ?? body.tree_ha ?? body.treeHa ?? 0);\n\nlet total = body.totalAreaHa ?? body.total_area_ha ?? body.total_ha ?? body.totalHa;\ntotal = total === undefined || total === null ? null : Number(total);\n\nlet nonTree = body.nonTreeAreaHa ?? body.non_tree_area_ha ?? body.non_tree_ha ?? body.nonTreeHa;\nnonTree = nonTree === undefined || nonTree === null ? null : Number(nonTree);\n\nif (nonTree === null && total !== null) nonTree = total - tree;\nif (total === null && nonTree !== null) total = nonTree + tree;\n\nconst nonTreePct = (total && total > 0 && nonTree !== null) ? (nonTree / total) * 100 : null;\n\nconst row = {\n  periodLabel: input.periodLabel,\n  startDate: input.startDate,\n  endDate: input.endDate,\n  treeAreaHa: tree,\n  nonTreeAreaHa: nonTree,\n  totalAreaHa: total,\n  nonTreePct,\n  apiStatusCode: input.statusCode ?? null,\n};\n\nconst staticData = this.getWorkflowStaticData('global');\nstaticData.results = staticData.results || [];\nstaticData.results.push(row);\n\nreturn [{ json: row }];\n"
+      },
+      "id": "a01a1690-cc0b-46b5-a228-5f4bd64d3bd1",
+      "name": "Calculate Non-Tree Coverage Area",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        304,
+        -192
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * Dipanggil setelah loop SplitInBatches selesai (output 'No Items Left').\n * Mengeluarkan semua hasil yang sudah dikumpulkan dari staticData.results.\n */\nconst staticData = this.getWorkflowStaticData('global');\nconst results = staticData.results || [];\nreturn results.map(r => ({ json: r }));\n"
+      },
+      "id": "2d28eb3a-f872-4d90-b4bf-81d26490b56f",
+      "name": "Load Collected Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "fieldsToAggregate": {
+          "fieldToAggregate": [
+            {
+              "fieldToAggregate": "periodLabel"
+            },
+            {
+              "fieldToAggregate": "startDate"
+            },
+            {
+              "fieldToAggregate": "endDate"
+            },
+            {
+              "fieldToAggregate": "treeAreaHa"
+            },
+            {
+              "fieldToAggregate": "nonTreeAreaHa"
+            },
+            {
+              "fieldToAggregate": "totalAreaHa"
+            },
+            {
+              "fieldToAggregate": "nonTreePct"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e179b725-1c28-4cb8-bb82-a672e267389e",
+      "name": "Aggregate All Results",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [
+        48,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{`Anda menerima data tutupan lahan kuartalan (5 tahun terakhir) dari sebuah AOI. Buat laporan dalam Bahasa Indonesia dengan format berikut:\n\nA) Ringkasan tren (5-10 bullet).\nB) Tabel Markdown per kuartal dengan kolom: Period | Start | End | Tree (ha) | Non-Tree (ha) | Non-Tree (%).\nC) Kesimpulan dan rekomendasi singkat (3-5 poin).\n\nData (array per kuartal):\nperiodLabel=${JSON.stringify($json.periodLabel)}\nstartDate=${JSON.stringify($json.startDate)}\nendDate=${JSON.stringify($json.endDate)}\ntreeAreaHa=${JSON.stringify($json.treeAreaHa)}\nnonTreeAreaHa=${JSON.stringify($json.nonTreeAreaHa)}\ntotalAreaHa=${JSON.stringify($json.totalAreaHa)}\nnonTreePct=${JSON.stringify($json.nonTreePct)}\n\nCatatan:\n- Jika ada nilai null/undefined, jelaskan sebagai \"data tidak tersedia\" tanpa mengarang.\n- Bulatkan angka menjadi 2 desimal.\n- Format angka Indonesia (pemisah ribuan \".\" dan desimal \",\").\n`}}",
+        "options": {
+          "systemMessage": "Anda adalah analis penginderaan jauh/GIS. Fokus pada interpretasi tren dan konsistensi angka. Jangan mengarang data di luar yang diberikan.",
+          "returnIntermediateSteps": false
+        }
+      },
+      "id": "7a5c4b08-c5b8-4117-a5f7-113bd1bd396a",
+      "name": "AI Agent - Generate Report",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        224,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "fbf39dbf-d4dc-4438-a648-efbd6be2c9ad",
+      "name": "Merge Results + Report",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        352,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "id": "aeb3710e-f258-4283-825e-de9d47bd7197",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        128,
+        432
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "95b9d63b-f2e6-452a-9fb0-e89dd987ebd4",
+      "name": "Think Tool",
+      "type": "@n8n/n8n-nodes-langchain.toolThink",
+      "typeVersion": 1.1,
+      "position": [
+        560,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * Membentuk payload 1 baris untuk Google Sheets:\n * - generatedAt: ISO string\n * - reportMarkdown: output dari agent\n * - resultsJson: JSON ringkas hasil kuartalan\n */\nconst generatedAt = new Date().toISOString();\n\n// Output agent biasanya ada di $json.output\nconst reportMarkdown = $json.output ?? $json.text ?? '';\n\nconst periods = Array.isArray($json.periodLabel) ? $json.periodLabel.length : 0;\nconst rows = [];\nfor (let i = 0; i < periods; i++) {\n  rows.push({\n    periodLabel: $json.periodLabel[i],\n    startDate: $json.startDate?.[i],\n    endDate: $json.endDate?.[i],\n    treeAreaHa: $json.treeAreaHa?.[i],\n    nonTreeAreaHa: $json.nonTreeAreaHa?.[i],\n    totalAreaHa: $json.totalAreaHa?.[i],\n    nonTreePct: $json.nonTreePct?.[i],\n  });\n}\n\nreturn [{\n  json: {\n    generatedAt,\n    reportMarkdown,\n    resultsJson: JSON.stringify(rows),\n  }\n}];\n"
+      },
+      "id": "2548e902-496c-4f0b-85c0-de478e16ec06",
+      "name": "Prepare Row for Google Sheets",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        576,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.googleSheetId || $('Workflow Configuration').first().json.googleSheetId }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "={{ $json.googleSheetTabName || $('Workflow Configuration').first().json.googleSheetTabName }}"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "schema": [
+            {
+              "id": "generatedAt",
+              "displayName": "generatedAt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reportMarkdown",
+              "displayName": "reportMarkdown",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "resultsJson",
+              "displayName": "resultsJson",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "handlingExtraData": "ignoreIt"
+        }
+      },
+      "id": "3159abb2-da82-4582-abb7-c2fa86f6bca4",
+      "name": "Save Report to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        800,
+        144
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger - Quarterly Data Collection": {
+      "main": [
+        [
+          {
+            "node": "Workflow Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Workflow Configuration": {
+      "main": [
+        [
+          {
+            "node": "Generate Date List for 5 Years",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Date List for 5 Years": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Date Periods",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Date Periods": {
+      "main": [
+        [
+          {
+            "node": "Load Collected Results",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fetch Satellite Imagery Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge Request Context + Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Satellite Imagery Data": {
+      "main": [
+        [
+          {
+            "node": "Merge Request Context + Response",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Request Context + Response": {
+      "main": [
+        [
+          {
+            "node": "Calculate Non-Tree Coverage Area",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Non-Tree Coverage Area": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Date Periods",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Collected Results": {
+      "main": [
+        [
+          {
+            "node": "Aggregate All Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate All Results": {
+      "main": [
+        [
+          {
+            "node": "AI Agent - Generate Report",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge Results + Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent - Generate Report": {
+      "main": [
+        [
+          {
+            "node": "Merge Results + Report",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Results + Report": {
+      "main": [
+        [
+          {
+            "node": "Prepare Row for Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Row for Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Save Report to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent - Generate Report",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Think Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent - Generate Report",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "8122c6a4-662c-45c9-ae1b-18b6aea34df3",
+  "meta": {
+    "instanceId": "80ab7af99b8e1c2fa31094125423af3483318ca515bb60ecf0f30a1ebe1ae751"
+  },
+  "id": "ZZSGkscPRcvfZsBP",
+  "tags": []
+}
